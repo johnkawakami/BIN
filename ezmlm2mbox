@@ -1,0 +1,85 @@
+#! /usr/bin/python3
+
+import fileinput, os, re, io, encodings, codecs, sys, argparse
+from dateutil.parser import parse
+from datetime import timezone, datetime, timedelta
+
+p = argparse.ArgumentParser(
+	description='Ezmlm archive conversion to mbox utility.',
+	 )
+p.add_argument( 
+	help='path to archive (like /vpopmail/domains/foo.org/addr/archive)',
+	dest='front', type=str, nargs=1, metavar='DIR', action='append')
+
+args = p.parse_args()
+
+path = sys.argv[1]
+
+bunches = []
+
+def main():
+	for d in os.listdir( path ):
+		bunches.append( d )
+
+	# open a file to collect the data
+
+	for d in bunches:
+		if ( d == "authors" or d == "lock" or d == "subjects" or d == "threads" ):
+			continue
+		msgs = []
+		msgpath = path + "/" + d + "/"
+		for m in os.listdir( msgpath ):
+			if m == "index":
+				continue  # bail out if it's the index file
+			# read in file
+			text = file_get_contents( msgpath + m )
+			# escape From lines
+			text = reformat_to_mbox( text )
+			# append to the msg arcive
+			print(text)
+
+def file_get_contents( filename ):
+	f = open( filename, "r", 1, 'latin_1' )
+	text = f.readlines()
+	f.close()
+	return "".join( text )
+
+def reformat_to_mbox( text ):
+	# split headers and body
+	parts = re.split( '\n\n', text, 1 )
+
+	# escape "From" lines in the body
+	revisedtext = re.sub( '^(>*)From(.+)$', '>\1From\2', parts[1] )
+	# tack headers onto the revised body
+	newtext = parts[0] + revisedtext
+
+	# construct a new From line
+	# (ezmlm messages don't have an envelope [a from line])
+	fromval = ""
+	dateval = ""
+	headers = parts[0]
+	lines = re.split( '\n', headers )
+	for line in lines:
+		# extract a from value from the from header
+		if (line.startswith("From:")):
+			fromval = line[5:]
+			match = re.search( '^.+<(.+)>$', fromval )
+			if (match):
+				fromval = match.group(1)
+			# if it doesn't match, the from header is probably only the address
+			# add other regexes below if we find other formats like "foo@bar.org (Foo Bar)" in use
+		# extract a date and normalize it to UTC
+		if (line.startswith("Date: ")):
+			dt = line[6:37]
+			d = parse( dt )
+			du = d.astimezone(timezone.utc)
+	output = "From %s %s\n%s\n" % (fromval, du.strftime("%c"), newtext)  
+	# fixme - do we use \n or \r\n???
+	return output
+
+# sample From line envelope
+# From melfig@mac.com Tue Mar 09 07:34:05 2010
+# 
+# Date: Sun, 29 Mar 2009 13:05:39 -0700 (PDT)
+
+main()
