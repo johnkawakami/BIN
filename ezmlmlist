@@ -1,0 +1,35 @@
+#! /usr/bin/python3
+
+import argparse, os, sys, re
+
+argp = argparse.ArgumentParser(
+	description='Ezmlm list subscriber dumper.',
+	)
+argp.add_argument(
+	help='path to list (like /vpopmail/domains/foo.org/addr)',
+	dest='front', type=str, nargs=1, metavar='DIR', action='append'
+	)
+args = argp.parse_args()
+
+path = sys.argv[1] + "/subscribers"
+ 
+emails = []
+
+# fixme - I don't think the exception handling is right
+
+for c in range(64,64+53):
+	os.chdir( path )
+	try:
+		fh = open(chr(c), "r")
+		data = list(fh)
+		for line in data:
+			emails = emails + re.findall( "T([^\0]+)\0", line )
+	except IOError:
+		pass
+	try:
+		fh.close()
+	except:
+		pass
+
+for email in emails:
+	print(email)
