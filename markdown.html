@@ -1,0 +1,75 @@
+<!doctype html>
+<html>
+<head>
+  <title>markdown editor</title>
+	<script src="http://ajax.aspnetcdn.com/ajax/jQuery/jquery-2.0.3.min.js"></script>
+	<script src="js/markdown.js"></script>
+	<style type="text/css">
+	#text-input { 
+		float: left; 
+		width: 400px;
+		height: 620px;
+	}
+	#preview { 
+		padding: 0.125in; 
+		border: 1px solid gray; 
+		width: 600px;
+		float: left;
+		height: 600px;
+		overflow: scroll;
+		font-size: 80%;
+		margin: 2px;
+	}
+	#notification {
+		color: silver;
+		font-size: 8pt;
+	}
+	</style>
+</head>
+<body>
+		<div id="toolbar">
+			<button onclick="saveCode()">save</button>
+			<button onclick="restoreCode()">restore</button>
+			<button onclick="help()">help</button>
+			<form id="form" name="form" style="display: inline">
+			the code: <input type="text" id="code" size="16" onfocus="this.form.code.select()" />
+			</form>
+			<span id="notification">autosaving turns on after you save once</span>
+		</div>
+    <textarea id="text-input" oninput="this.editor.update()"
+              rows="6" cols="60">Type **Markdown** here.</textarea>
+    <div id="preview"> </div>
+    <script>
+			var autosave = null;
+      function Editor(input, preview) {
+        this.update = function () {
+          preview.innerHTML = markdown.toHTML(input.value);
+					geid("code").value = preview.innerHTML;
+        };
+        input.editor = this;
+        this.update();
+      }
+      var geid = function (id) { return document.getElementById(id); };
+      editor = new Editor(geid("text-input"), geid("preview"));
+
+			function restoreCode() {
+				document.getElementById("text-input").value = localStorage["markdown"];
+				editor.update();
+			}
+			function saveCode() {
+				localStorage["markdown"] = document.getElementById("text-input").value;
+				jQuery('#notification').html('saved at ' + (new Date()) );
+				if (autosave==null) {
+					autosave = setInterval( saveCode, 60000 );
+				}
+			}
+			function copyHtmlCode() {
+				clipboardData.setData( "Text", geid("preview").innerHTML );
+			}
+			function help() {
+				window.open("markdownhelp.html");
+				return false;
+			}
+    </script>
+</body>
+</html>
