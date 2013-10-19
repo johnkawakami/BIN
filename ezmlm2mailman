@@ -1,0 +1,195 @@
+#! /usr/bin/python3
+#
+# Creates a mailman list, imports subscribers, moves
+# the email database into the archives, then runs the command to 
+# rebuild the archives.
+#
+
+
+from config import *
+import pickle, subprocess, os, os.path, sqlite3, sys, argparse
+import shutil
+
+p = argparse.ArgumentParser(
+	description='Copy an ezmlm list to the system\'s mailman.',
+	)
+p.add_argument( 'listname', \
+	help='Name of ezmlm list, like listname@example.com.', \
+	type=str, nargs=1, metavar='LISTNAME', action='append')
+p.add_argument( '--path', \
+	help='Path to vpopmail root, like /vpopmail/domains', \
+	type=str, nargs=1, metavar='DIR', action='append', required=False)
+p.add_argument( '-c', \
+	help='Clean out previous attempts to import this list.', \
+	action='store_true', required=False)
+p.add_argument( '-v', \
+	help='Verbose descriptiosn of each step.', \
+	action='store_true', required=False)
+args = p.parse_args()
+
+if (args.path != None):
+	mailBase = args.path[0][0]
+
+verbose = False
+if (args.v == True):
+	verbose = True
+
+try:
+	listAddress = args.listname[0][0]
+	[ listName, listDomain ] = listAddress.split('@')
+except ValueError as e:
+	print(e)
+	print("addresses should be written like: listname@listdomain.com")
+	sys.exit(1)
+
+newListName = ""
+
+def main(listName):
+	# listName is the name in Ezmlm, and
+	# newListName is the name in Mailman.
+	newListName = listName
+	if (os.path.exists( mailmanBase + "lists/" + listName )):
+		newListName += "-ezmlm"
+		if (verbose):
+			print("Name clash with %s. New list name is %s." % \
+				(listName, newListName))
+
+	if (args.c == True):
+		cleanout( listName, newListName, listDomain )
+
+	ezmlmList = ( "%s/%s/%s" % ( mailBase, listDomain, listName ) )
+	subscriberList = subscriberBase+listName
+	dump_subscriber_list( ezmlmList, subscriberList )
+	dump_ezmlm_archive( ezmlmList, newListName )
+	newlist( newListName, listDomain )
+	add_members( newListName, subscriberList )
+	mbox = "%s/%s.mbox/%s.mbox" % (mailmanArchive, newListName, newListName)
+	arch( newListName, mbox )
+
+def cleanout( listName, newListName, listDomain ):
+	'''Deletes a list and its archive, and also any files this
+	   script used to populate the list. 
+	'''
+	if (verbose):
+		print("Cleanout %s archives and list." % (listName) )
+	try:
+		output = subprocess.check_output([ RMLIST, '-a', newListName ])
+	except subprocess.CalledProcessError as e:
+		print(sys.stderr, "cleanout() must be run as root")
+		sys.exit(1)
+	# remove the generated subscribers list
+	try:
+		os.unlink( subscriberBase + listName )
+	except OSError as e:
+		if (e.errno==2):
+			pass
+		else:
+			print(e)
+			sys.exit(1)
+
+###----------------------------------------
+
+def newlist( listName, listDomain ):
+	# print( listName + "@" + listDomain )
+	try:
+		output = subprocess.check_output(\
+			[NEWLIST, '-q', '-e', listDomain, listName, \
+			listAdminEmail, listAdminPassword])
+	except subprocess.CalledProcessError as e:
+		print(sys.stderr, "newlist() must be run as root")
+		sys.exit(1)
+	add_aliases( listName, listDomain )
+
+def add_aliases( listName, listDomain ):
+	if (verbose):
+		print( "Adding aliases for %s @ %s." % ( listName, listDomain ) )
+	try:
+		conn = sqlite3.connect( virtualDb )
+		c = conn.cursor()
+		c.execute( "delete from virtual where recipient='%s@%s'" % \
+			(listName, listDomain) )
+		c.execute( '''insert into virtual values 
+			('%s', '|/var/lib/mailman/mail/mailman post %s', 0)''' % \
+			( listName, listName ) )
+		for action in ['admin','bounces','confirm','join','leave', \
+			'owner','request','subscribe','unsubscribe']:
+			c.execute( "delete from virtual where recipient='%s-%s@%s'" % \
+				(listName, action, listDomain) )
+			c.execute( '''insert into virtual values 
+				('%s-%s@%s', '|/var/lib/mailman/mail/mailman %s %s', 0)''' % \
+				( listName, action, listDomain, action, listName ) )
+	except Error as e:
+		sys.exit(1)
+
+def add_members(listName, subscriberList):
+	if (verbose):
+		print( "Transferring subscribers from %s to %s." % \
+			( subscriberList, listName ) )
+	try:
+		output = subprocess.check_output(\
+			[ADD_MEMBERS, "-r", subscriberList,\
+			"--admin-notify=n", "--welcome-msg=n", listName ])
+	except subprocess.CalledProcessError as e:
+		print(sys.stderr, "add_members() must be run as root")
+		sys.exit(1)
+
+def arch( listName, mbox ): 
+	if (verbose):
+		print("Rebuilding archives for %s in %s." % ( listName, mbox ) )
+	try:
+		output = subprocess.check_output(\
+			[ARCH, "-q", "--wipe", listName, mbox])
+	except subprocess.CalledProcessError as e:
+		print(sys.stderr, "arch() must be run as root")
+		sys.exit(1)
+
+def list_lists():
+	"""A list of all the mailman lists on this system.
+	
+	Works by running the list_lists command for mailman.
+	"""
+	output = subprocess.check_output( [LIST_LISTS, "-b"], \
+		universal_newlines=True )
+	lists = list(filter(("").__ne__, output.split("\n")))
+	return lists
+
+def dump_subscriber_list( ezmlmList, outputFile ):
+	fh = open(outputFile, "w")
+	try:
+		proc = subprocess.check_output( [ EZMLMLIST, ezmlmList ], \
+			stderr=subprocess.STDOUT, universal_newlines=True )
+		fh.write(proc) 
+	except:
+		pass
+	fh.close()
+
+def dump_ezmlm_archive( ezmlmList, newListName ):
+	'''Dumps the Ezmlm archive to a Mailman archive.
+	This is tricky to call because you need to supply the
+	Ezmlm list name, and the Mailman list name, which may be
+	different.  They should usually be the same, unless
+	there's a name clash.  The convention in this script
+	is that -ezmlm is appended to the name if there's a clash.
+	'''
+	archive = ( "%s/archive" % ( ezmlmList ) )
+	mboxPath = ( "%s/%s.mbox" % ( mailmanArchive, newListName ) )
+	mbox = ( "%s/%s.mbox" % ( mboxPath, newListName ) )
+	if (verbose):
+		print("Dumping archive %s, from %s to %s." % \
+			( ezmlmList, archive, mbox ) )
+	try:
+		os.makedirs( mboxPath )
+	except OSError as e:
+		if (e.errno==13):
+			print("You need to run this as root.")
+			print(e)
+			sys.exit(1)
+		else:
+			print(e)
+			sys.exit(1)
+	mfh = open( mbox, "wb" )
+	# print ( "%s > %s" % ( archive, mbox ) )
+	mboxOutput = subprocess.Popen( [ EZMLM2MBOX, archive ], stdout=mfh )
+
+
+main(listName)
