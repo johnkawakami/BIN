@@ -15,3 +15,10 @@ A collection of random scripts that search engines might find.
 
 *scan.py*: a prep tool that scans an qmail/vpopmail/ezmlm/mailman directory and then produces a data structure cataloging the contents.
 
+*backup-sums.sh*: reports on checksums of many files
+
+*backup-compare-sums.sh*: diffs all the above reports
+
+The bad news is, these sums take too long to calculate, so the whole thing is virtually useless.
+I need something that runs in a few minutes, not hours.  Back to the drawing board.
+It works well for small sets of files, though.
