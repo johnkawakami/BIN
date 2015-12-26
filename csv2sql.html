@@ -1,0 +1,36 @@
+<html>
+<body>
+<h1>CSV to SQL Code Generator</h1>
+<p>Generates SQL CREATE TABLE from a CSV header line.</p>
+
+<form>
+<textarea name="txt" id="txt" rows="30" cols="80"></textarea><br />
+<input type="button" value="generate code" onclick="generate()" /><br />
+<textarea name="code" id="code" rows="30" cols="80">code will appear here</textarea><br />
+</form>
+<script>
+function generate() {
+  h = document.getElementById('txt').value;
+
+  cols = h.split(',');
+
+  ct = cols.length;
+
+  c = ("CREATE TABLE T (\n");
+  for(i=0;i<ct;i++) {
+    name = cols[i];
+    name = name.toLowerCase();
+    name = name.replace(/ /g,'_');
+    c = c + ('`'+name+"` varchar(255)");
+    if ((i+1)<ct) {
+      c = c + (",\n");
+    } else {
+      c = c + ("\n)");
+    }
+  }
+  c = c + ' DEFAULT CHARACTER SET = "utf8"'
+  document.getElementById('code').value = c;
+}
+</script>
+</body>
+</html>
