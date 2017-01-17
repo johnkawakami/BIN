@@ -1,0 +1,15 @@
+#! /bin/bash
+
+# This script starts Cryptocat, but looks for 
+# a running copy of Cryptocat, first, so you don't
+# end up with multiple instances.
+
+C=`pstree | grep -c Cryptocat`
+
+if [[ $C -ge 1 ]] 
+then
+    echo "already running Cryptocat"
+else
+    echo "starting Cryptocat"
+    /home/johnk/bin/Cryptocat-linux-x64/Cryptocat &
+fi
